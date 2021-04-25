@@ -1,0 +1,236 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.fft import fft
+
+"""
+The 2m antenna extends from (0, y_0, 0) to (0, -y_0, 0) with x-width -0.01 to 0.01 and z-width -0.01 to 0.01.
+Target at (X_0, -Y_0, 0), X_0 =1, Y_0=1, 
+or R = sqrt(2), theta = pi/4 in cylindrical polar coordinates.
+"""
+
+c = 3e8 #Speed of light. m/s
+X_0 = 1 #Target x position. m
+Y_0 = 1 #Target y position. m
+omega = 2.4e9 #Angular frequency. rad/s
+Omega = 2.4e8 #Angular frequency for amplitude modulation. rad/s
+epsilon0 = 8.85e-12 #Vacuum permittivity. F/m
+epsilonr = 10 # Relative permittivity. For Alumina.
+mu0 =1.257e-6 #Vacuum permeability. N/A2
+x_0 = 0.01 #Half x width of the antenna. m
+y_0 = 1 #Half y length of the antenna. m
+z_0 = 0.01 #Half z width of the antenna. m
+C = 1 #Coefficient of the polarization current.
+y_a = np.linspace(-1, 1, 5000) #Corrent source points' y coordinates.
+
+
+class Fields: #Create a class for the A field at the target  & J in the antenna.
+    def __init__(self, R, theta, T, t):
+        self.distance = R #Location of the detector to the origin. m
+        self.angle = theta #Azimuzai angle of the detector. rad
+        self.time_limit = T #Maximum time of the signal. s
+        self.t = np.linspace(0, T, 5000) #Time range of the signal. s
+      
+    def A_list(self): #Create a  list for the Magnetic vector potential at tp at the detector.
+        self.A_list = [] #Empty list of the magnetic vector potential.
+        for i in range(len(self.t)):        
+            def p_y(y):
+                """
+                Parameters
+                ----------
+                y : array
+                    Polarization current y position.
+            
+                Returns
+                -------
+                array
+                    Time for the polarization current to move to y.
+                """
+                return -np.sqrt(X_0**2 + (Y_0 + y)**2)/c
+            
+            def d(y):
+                """
+                Parameters
+                ----------
+                y: float
+                    y direction in the antenna.
+        
+                Returns
+                -------
+                float
+                    Distance between a polarization current point in the antenna to the target.
+                """
+                return np.sqrt((self.distance*np.sin(self.angle))**2 + (self.distance*np.cos(self.angle) + y)**2)
+            
+            def f(y):
+                """
+                Parameters
+                ----------
+                y: float
+                    y direction in the antenna.
+        
+                Returns
+                -------
+                float
+                    Integrand of the integration of A.
+                """
+                return C*np.exp(1j*omega*(self.t[i] - p_y(y) - d(y)/c)+ 4j*np.sin(0.2*omega * (self.t[i] - p_y(y) - d(y)/c)))/d(y)
+            
+            Ai =(f(1) + f(0.8) + f(0.6) + f(0.4)+ f(0.2)+ f(0) + f(-0.2) + f(-0.4) + f(-0.6) + f(-0.8) + f(-0.999))*mu0*4*x_0*z_0/(4*np.pi)#*integrate.quad(f, -y_0, y_0)[0]
+            #The A field at (R, theta, 0) at time t[i] + d(y)/c.
+            self.A_list.append(Ai)
+        return self.A_list
+
+    def J_list(self): #Create a  list for the J in the antenna.
+        self.J_list = [] #Polarization current in the antenna.
+        for i in range(len(self.t)):
+            def p_y(y):
+                """
+                Parameters
+                ----------
+                y : array
+                    Polarization current y position.
+            
+                Returns
+                -------
+                array
+                    Time for the polarization current to move to y.
+                """
+                return -np.sqrt(X_0**2 + (Y_0 + y)**2)/c
+            
+            def d(y):
+                """
+                Parameters
+                ----------
+                y: float
+                    y direction in the antenna.
+        
+                Returns
+                -------
+                float
+                    Distance between a polarization current point in the antenna to the target.
+                """
+                return np.sqrt((self.distance*np.sin(self.angle))**2 + (self.distance*np.cos(self.angle) + y)**2)
+            
+            def J(y):
+                """
+                Parameters
+                ----------
+                y: float
+                    y direction in the antenna.
+        
+                Returns
+                -------
+                array
+                    Polarization current in the antenna in the y direction.
+                """
+                return C*np.exp(1j*omega*(self.t[i] - p_y(y))+ 4j*np.sin(0.2*omega * (self.t[i] - p_y(y))))
+            
+            self.Ji = J(-0.999)
+            self.J_list.append(self.Ji)
+        return self.J_list
+    
+    def A(self): #Convert sequence to list object for the A field.
+        return np.array(self.A_list())
+    
+    def J(self): #Convert sequence to list object for current J at (0, 0.1, 0).
+        return np.array(self.J_list()) #Electric field at (R, theta, 0)
+        
+    def copy(self): #Copy the Fields class to get multiple initial values.
+        return Fields(self.distance, self.angle, self.time_limit, self.t)
+
+S1 = Fields(np.sqrt(2), np.pi/4, 3e-6, np.linspace(0, 3e-6, 5000))
+
+"""
+One thing to notice when using the code.
+Clear all the variables every time after plotting a graph with a  function in class Fields before plotting another graph.
+If not, the console will return: "'list' object is not callable"
+This is because a 'list' object can only be called once outside the class.
+"""
+#%%
+"""
+Polarization current J at (0, 0.1, 0) in the antenna verses t plot for PM.
+"""
+plt.plot(S1.t, S1.J())
+#plt.title('Polarization current J at (0, 0.1, 0) in the antenna verses t plot for PM.')
+plt.xlabel('t/s')
+plt.ylabel('J/Am-2')
+
+#%%
+"""
+Fourier transform of polarization current J at (0, 0.1, 0) for  PM.
+"""
+J_f = fft(S1.J())
+freqJ = np.linspace(0, 1/(S1.time_limit/5000), 5000)
+plt.plot(freqJ, np.abs(J_f)/1000)
+plt.xlim(0, 1e9)
+#plt.ylim(0, 1e-3)
+#plt.title('Fourier transform of the polarization current for PM.')
+plt.xlabel('Frequency/Hz')
+plt.ylabel('Amplitude')
+#%%
+"""
+Magnetic vector potential A at the target verses tp plot for PM.
+"""
+plt.plot(S1.t, S1.A())
+#plt.title('Magnetic vector potential A at a remote location (X, Y, Z) verses t plot for PM.')
+plt.xlabel('t/s')
+plt.ylabel('A/kgms-2A-1')
+#%%
+"""
+Fourier transform of magnetic vector potential A at a remote location (X, Y, Z) for PM.
+"""
+A_f = fft(S1.A())
+freqA = np.linspace(0, 1/(S1.time_limit/5000), 5000)
+plt.plot(freqA, np.abs(A_f))
+plt.xlim(0, 1e9)
+#plt.ylim(0, 1e-3)
+#plt.title('Fourier transform of the magnetic vector potential for PM.')
+plt.xlabel('Frequency/Hz')
+plt.ylabel('Amplitude')
+#%%
+"""
+Superluminal speed of the polarization current v wrt y on the antenna.
+"""
+def P_y(y):
+    """
+    Parameters
+    ----------
+    y : array
+        Polarization current y position.
+
+    Returns
+    -------
+    array
+        Time for the polarization current to move to y.
+    """
+    return -np.sqrt(X_0**2 + (Y_0 + y)**2)/c
+
+v_y = -P_y(y_a)*c/(Y_0 + y_a) #Speed of the current / c.
+plt.plot(y_a, np.log(v_y)) #ln of the ratio verses y plot, the speed is always superluminal.
+#plt.title('ln(v/c) verses y plot, v is the speed of the current.')
+plt.xlabel('y/m')
+plt.ylabel('ln(v/c)')
+plt.grid()
+#%%
+"""
+Normalized J spectrum and A spectrum.
+"""
+J_f = np.abs(fft(S1.J()))
+A_f = np.abs(fft(S1.A()))
+
+Jmax, Jmin = max(J_f), min(J_f)
+Amax, Amin = max(A_f), min(A_f)
+for i, val in enumerate(J_f):
+    J_f[i] = (val - Jmin)/(Jmax - Jmin)
+for i, val in enumerate(A_f):
+    A_f[i] = (val - Amin)/(Amax - Amin)
+
+freq = np.linspace(0, 1/(S1.time_limit/5000), 5000)
+plt.plot(freq, np.abs(J_f), label = 'Polarization current J')
+plt.plot(freq, np.abs(A_f), label = 'Magnetic vector potential A')
+plt.xlim(0, 1e9)
+#plt.title('Normalized electric field spectrum and the voltage spectrum.')
+plt.xlabel('f/Hz')
+plt.ylabel('Amplitude')
+plt.legend(loc = 1)
+#%%
